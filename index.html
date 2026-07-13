@@ -1394,11 +1394,19 @@ function renderRates(){
 
 /* ================= EXPENSES ================= */
 function openExpenseModal(){
+  const partners=[...new Set((DB.investments||[]).map(i=>i.name))];
   openModal(`
   <div class="modal-head"><h3>খরচ লিখুন</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
   <label>খরচের ধরন</label>
   <select id="exCat"><option>কাঠ / বোর্ড কেনা</option><option>হার্ডওয়্যার (স্ক্রু, তালা, হ্যান্ডেল)</option><option>রং / বার্নিশ / পলিশ</option><option>মিস্ত্রি মজুরি</option><option>পরিবহন / ভ্যান ভাড়া</option><option>দোকান ভাড়া</option><option>বিদ্যুৎ বিল</option><option>অন্যান্য</option></select>
   <label>বিবরণ (ঐচ্ছিক)</label><input id="exNote" placeholder="যেমন: ৩ সিএফটি সেগুন কাঠ">
+  <label>টাকা কে দিলো / কোথা থেকে এলো?</label>
+  <input id="exSrc" list="srcDL" placeholder="যেমন: ব্যবসার ক্যাশ / শোভন">
+  <datalist id="srcDL"><option value="ব্যবসার ক্যাশ"><option value="বিকাশ">${partners.map(p=>`<option value="${p}">`).join('')}</datalist>
+  <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600;color:var(--ink);margin-top:10px;cursor:pointer">
+    <input type="checkbox" id="exInv" style="width:auto"> পার্টনারের নিজের পকেটের টাকা — ইনভেস্টমেন্টেও তুলে রাখো
+  </label>
+  <div style="font-size:.73rem;color:var(--muted);margin-top:3px">টিক দিলে উপরের নামের ব্যক্তির ইনভেস্টমেন্টে এই টাকাটা নিজে থেকে যোগ হবে।</div>
   <div class="form-row">
     <div><label>টাকা (৳) *</label><input id="exAmt" type="number" inputmode="numeric" placeholder="0"></div>
     <div><label>তারিখ</label><input id="exDate" type="date" value=""></div>
@@ -1409,9 +1417,16 @@ function openExpenseModal(){
 function saveExpense(){
   const amt=Number(document.getElementById('exAmt').value);
   if(!amt){toast('টাকার পরিমাণ দিন');return;}
-  DB.expenses.unshift({id:uid(),date:document.getElementById('exDate').value||todayISO(),
-    category:document.getElementById('exCat').value,note:document.getElementById('exNote').value.trim(),amount:amt});
-  save();closeModal();renderAll();toast('✓ খরচ সেভ হয়েছে');
+  const src=document.getElementById('exSrc').value.trim();
+  const asInv=document.getElementById('exInv').checked;
+  if(asInv&&!src){toast('পার্টনারের নাম লিখুন (টাকা কে দিলো ঘরে)');return;}
+  const date=document.getElementById('exDate').value||todayISO();
+  const cat=document.getElementById('exCat').value;
+  const eid=uid();
+  DB.expenses.unshift({id:eid,date,category:cat,note:document.getElementById('exNote').value.trim(),amount:amt,source:src});
+  if(asInv)DB.investments.unshift({id:uid(),name:src,type:'in',amount:amt,date,note:'খরচ: '+cat+' (নিজের পকেট থেকে)',refExp:eid});
+  save();closeModal();renderAll();
+  toast(asInv?'✓ খরচ সেভ + '+src+'-এর ইনভেস্টমেন্টেও উঠেছে':'✓ খরচ সেভ হয়েছে');
 }
 function renderExpenses(){
   const box=document.getElementById('expenseList');
@@ -1421,7 +1436,7 @@ function renderExpenses(){
   <div class="item-card">
     <div class="item-top">
       <div><div class="item-name" style="font-size:.92rem">${e.category}</div>
-      <div class="item-sub">${e.note?e.note+' · ':''}${fmtDate(e.date)}</div></div>
+      <div class="item-sub">${e.source?'💼 '+e.source+' · ':''}${e.note?e.note+' · ':''}${fmtDate(e.date)}</div></div>
       <div class="item-money"><div class="m-big" style="color:var(--red)">−${tk(e.amount)}</div>
       <div style="white-space:nowrap"><button class="btn btn-sm" style="background:none;color:var(--teak);padding:2px 4px;font-size:.72rem" onclick="editExpense('${e.id}')">✏️ এডিট</button>
       <button class="btn btn-sm" style="background:none;color:var(--muted);padding:2px 4px;font-size:.72rem" onclick="deleteExpense('${e.id}')">মুছুন</button></div></div>
@@ -1430,11 +1445,19 @@ function renderExpenses(){
 }
 function editExpense(id){
   const e=DB.expenses.find(x=>x.id===id);if(!e)return;
+  const partners=[...new Set((DB.investments||[]).map(i=>i.name))];
+  const linked=(DB.investments||[]).find(i=>i.refExp===id);
   openModal(`
   <div class="modal-head"><h3>খরচ এডিট</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
   <label>খরচের ধরন</label>
   <select id="eeCat">${['কাঠ / বোর্ড কেনা','হার্ডওয়্যার (স্ক্রু, তালা, হ্যান্ডেল)','রং / বার্নিশ / পলিশ','মিস্ত্রি মজুরি','পরিবহন / ভ্যান ভাড়া','দোকান ভাড়া','বিদ্যুৎ বিল','অন্যান্য'].map(c=>`<option ${c===e.category?'selected':''}>${c}</option>`).join('')}</select>
   <label>বিবরণ</label><input id="eeNote" value="${e.note||''}">
+  <label>টাকা কে দিলো / কোথা থেকে?</label>
+  <input id="eeSrc" list="srcDL" value="${e.source||''}" placeholder="যেমন: ব্যবসার ক্যাশ / শোভন">
+  <datalist id="srcDL"><option value="ব্যবসার ক্যাশ"><option value="বিকাশ">${partners.map(p=>`<option value="${p}">`).join('')}</datalist>
+  <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600;color:var(--ink);margin-top:10px;cursor:pointer">
+    <input type="checkbox" id="eeInv" style="width:auto" ${linked?'checked':''}> পার্টনারের নিজের পকেটের টাকা — ইনভেস্টমেন্টেও থাকুক
+  </label>
   <div class="form-row">
     <div><label>টাকা (৳) *</label><input id="eeAmt" type="number" inputmode="numeric" value="${e.amount}"></div>
     <div><label>তারিখ</label><input id="eeDate" type="date" value="${e.date}"></div>
@@ -1445,17 +1468,32 @@ function saveExpenseEdit(id){
   const e=DB.expenses.find(x=>x.id===id);if(!e)return;
   const amt=Number(document.getElementById('eeAmt').value);
   if(!amt){toast('টাকার পরিমাণ দিন');return;}
+  const src=document.getElementById('eeSrc').value.trim();
+  const chk=document.getElementById('eeInv').checked;
+  if(chk&&!src){toast('পার্টনারের নাম লিখুন');return;}
   e.category=document.getElementById('eeCat').value;
   e.note=document.getElementById('eeNote').value.trim();
   e.amount=amt;e.date=document.getElementById('eeDate').value||e.date;
+  e.source=src;
+  const linked=(DB.investments||[]).find(i=>i.refExp===id);
+  if(chk){
+    if(linked){linked.name=src;linked.amount=amt;linked.date=e.date;linked.note='খরচ: '+e.category+' (নিজের পকেট থেকে)';}
+    else DB.investments.unshift({id:uid(),name:src,type:'in',amount:amt,date:e.date,note:'খরচ: '+e.category+' (নিজের পকেট থেকে)',refExp:id});
+  }else if(linked){
+    DB.investments=DB.investments.filter(i=>i.refExp!==id);
+  }
   save();closeModal();renderAll();toast('✓ পরিবর্তন সেভ হয়েছে');
 }
 function deleteExpense(id){
   const e=DB.expenses.find(x=>x.id===id);if(!e)return;
+  const linked=(DB.investments||[]).find(i=>i.refExp===id);
   if(e.refMistri){
     if(!confirm('এটা মিস্ত্রিকে টাকা দেওয়ার এন্ট্রি — মুছলে মিস্ত্রি খাতা থেকেও মুছে যাবে (তার পাওনা আবার বাড়বে)। মুছবেন?'))return;
     DB.mistri=(DB.mistri||[]).filter(m=>m.id!==e.refMistri);
+  }else if(linked){
+    if(!confirm('এই খরচটা '+linked.name+'-এর ইনভেস্টমেন্টের সাথে যুক্ত — মুছলে সেটাও মুছে যাবে। মুছবেন?'))return;
   }else if(!confirm('খরচটি মুছবেন?'))return;
+  DB.investments=(DB.investments||[]).filter(i=>i.refExp!==id);
   DB.expenses=DB.expenses.filter(x=>x.id!==id);save();renderAll();
 }
 
@@ -1773,7 +1811,7 @@ function exportText(){
   L.push('');L.push('▶ শোরুম স্টক');
   DB.stock.length?DB.stock.forEach(s=>L.push('  '+s.name+': '+s.qty+' পিস | বিক্রয়মূল্য '+tk(s.salePrice))):L.push('  স্টক খালি');
   L.push('');L.push('▶ খরচের খাতা');
-  DB.expenses.forEach(e=>L.push('  '+fmtDate(e.date)+' | '+e.category+(e.note?' ('+e.note+')':'')+': '+tk(e.amount)));
+  DB.expenses.forEach(e=>L.push('  '+fmtDate(e.date)+' | '+e.category+(e.note?' ('+e.note+')':'')+(e.source?' | উৎস: '+e.source:'')+': '+tk(e.amount)));
   L.push('');L.push('▶ ইনভেস্টমেন্ট লেনদেন');
   (DB.investments||[]).forEach(i=>L.push('  '+fmtDate(i.date)+' | '+i.name+' '+(i.type==='in'?'দিয়েছে':'তুলেছে')+' '+tk(i.amount)+(i.note?' ('+i.note+')':'')));
   L.push('');L.push('▶ মিস্ত্রি খাতা (দেনা বাকি: '+tk(mistriTotalDena())+')');
